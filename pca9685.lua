@@ -10,10 +10,14 @@
 
 local pca9685 = {}
 
-local PCA9685_MODE1 = 0x00
-local PCA9685_LED0_ON_L = 0x06
-local PCA9685_ALL_LED_ON_L = 0xfa
-local PCA9685_PRE_SCALE = 0xfe
+local REG_MODE1 = 0x00
+local BIT_ALLCALL = 0
+local BIT_SLEEP = 4
+local BIT_AI = 5
+local BIT_RESTART = 7
+local REG_LED0 = 0x06
+local REG_ALL_LED = 0xfa
+local REG_PRE_SCALE = 0xfe
 local this = {}
 
 local function _send(reg_addr, ...)
@@ -37,6 +41,8 @@ local function _read(reg_addr)
 end
 
 local function _sendOnOff(reg_addr, on, off)
+  if on < 0 or on > 4095 then return end
+  if off < 0 or off > 4095 then return end
   local on_l = bit.band(on, 0xff)
   local on_h = bit.rshift(on, 8)
   local off_l = bit.band(off, 0xff)
@@ -45,27 +51,28 @@ local function _sendOnOff(reg_addr, on, off)
 end
 
 function pca9685.setPwmFreq(hz)
-  local prescaler = 25000000 / (hz * 4096)
-  local mode1 = _read(PCA9685_MODE1)
-  _send(PCA9685_MODE1, bit.bor(mode1, 16))
-  _send(PCA9685_PRE_SCALE, prescaler)
-  _send(PCA9685_MODE1, mode1)
-  tmr.delay(1000)
-  _send(PCA9685_MODE1, bit.bor(mode1, 128))
+  if hz < 24 or hz > 1526 then return end
+  local mode1 = _read(REG_MODE1)
+  _send(REG_MODE1, bit.set(mode1, BIT_SLEEP))
+  local prescaler = math.ceil((25000000 / (hz * 4096)) - 1)
+  _send(REG_PRE_SCALE, prescaler)
+  _send(REG_MODE1, mode1)
+  tmr.delay(500)
+  _send(REG_MODE1, bit.set(mode1, BIT_RESTART))
 end
 
 function pca9685.init(i2c_id, i2c_addr)
   this.i2c_id = i2c_id 
   this.i2c_addr = i2c_addr
-  _send(PCA9685_MODE1, 33)
+  _send(REG_MODE1, bit.set(0, BIT_ALLCALL, BIT_AI))
 end
 
 function pca9685.setPwmAll(on, off)
-  _sendOnOff(PCA9685_ALL_LED_ON_L, on, off)
+  _sendOnOff(REG_ALL_LED, on, off)
 end
 
 function pca9685.setPwm(channel, on, off)
-  local reg_addr = PCA9685_LED0_ON_L + (channel * 4)
+  local reg_addr = REG_LED0 + (channel * 4)
   _sendOnOff(reg_addr, on, off)
 end
 
